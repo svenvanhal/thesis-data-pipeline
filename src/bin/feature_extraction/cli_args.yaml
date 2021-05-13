@@ -1,0 +1,59 @@
+name: Feature Extraction
+about: Thesis Data Pipeline - Feature Extraction
+
+settings:
+  - ArgRequiredElseHelp
+
+args:
+  - in_records:
+      help: Input file for processed (binary) log records.
+      long: in-records
+      multiple: false
+      required: true
+      takes_value: true
+
+  - in_prim_stats:
+      help: Input file for processed (binary) primary domain statistics.
+      long: in-prim
+      multiple: false
+      required: true
+      takes_value: true
+
+  - payload:
+      help: Extract payload features
+      short: p
+      long: payload
+      multiple: false
+      takes_value: false
+      required: false
+
+  - time:
+      help: Time window duration
+      short: t
+      long: time
+      multiple: false
+      takes_value: true
+      required: false
+
+  - fixed:
+      help: Fixed window size
+      short: f
+      long: fixed
+      multiple: false
+      takes_value: true
+      required: false
+
+  - out_features:
+      help: Output file for extracted features.
+      long: out-features
+      multiple: false
+      required: true
+      takes_value: true
+
+  # TODO: argument to split test set based on domains (and two different feature set files)
+
+
+groups:
+  - feature_extraction:
+      args: [ payload, time, fixed ]
+      multiple: true

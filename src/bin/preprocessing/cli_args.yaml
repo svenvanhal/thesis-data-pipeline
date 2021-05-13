@@ -1,0 +1,22 @@
+name: Preprocessing
+about: Thesis Data Pipeline - Preprocessing
+
+settings:
+  - ArgRequiredElseHelp
+
+args:
+  - out_records:
+      help: Output file for processed (binary) log records.
+      short: r
+      long: out-records
+      multiple: false
+      required: true
+      takes_value: true
+
+  - out_prim_stats:
+      help: Output file for processed (binary) log records.
+      short: p
+      long: out-prim
+      multiple: false
+      required: true
+      takes_value: true
