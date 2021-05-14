@@ -4,6 +4,11 @@
 #[macro_use]
 extern crate serde_prefix;
 
+extern crate serde;
+
+// #[macro_use]
+// extern crate erased_serde;
+
 // Shared (structs) between binaries
 pub mod shared_interface;
 pub mod cli;

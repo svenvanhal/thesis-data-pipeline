@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 use std::f32::consts::LN_2;
 
-use crate::feature_extraction::feature_vector::PayloadFeatureVector;
+use crate::feature_extraction::feature_vector::{FeatureVector, PayloadFeatureVector};
 use crate::parse_dns::DnsPayload;
 
-pub fn payload_features(entry: &DnsPayload, primary_domain_length: u8) -> PayloadFeatureVector {
+pub fn payload_features(entry: &DnsPayload, primary_domain_length: u8) -> FeatureVector {
     let n_labels = entry.labels.len() as u8;
 
     // Bail if no labels (e.g. only dots in input string)
     // TODO: this should not be possible, so check might be removed
     if n_labels == 0 {
-        return PayloadFeatureVector::default();
+        return FeatureVector::Payload(PayloadFeatureVector::default());
     }
 
     // Average label length and maximum label length
@@ -77,7 +77,7 @@ pub fn payload_features(entry: &DnsPayload, primary_domain_length: u8) -> Payloa
     // Fraction of the total available query space that is used
     let fill_ratio = entry.payload_len as f32 / (253 - (primary_domain_length + 1)) as f32;
 
-    PayloadFeatureVector {
+    FeatureVector::Payload(PayloadFeatureVector {
         n_unique,
         ratio_unique,
         n_digits,
@@ -87,5 +87,5 @@ pub fn payload_features(entry: &DnsPayload, primary_domain_length: u8) -> Payloa
         max_label_length,
         entropy,
         fill_ratio,
-    }
+    })
 }

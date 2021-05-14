@@ -27,7 +27,7 @@ fn parse_opts() -> (File, File) {
 const ASCII_TAB: u8 = b'\t';
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("======================\n[THESIS] Data Pipeline\n======================\n  -> Preprocessing\n\n  [-] Starting preprocessing...");
+    print!("======================\n[THESIS] Data Pipeline\n======================\n\n-> Preprocessing\n   [1.] Working... ");
 
     let (out_records, out_prim_stats) = parse_opts();
 
@@ -90,17 +90,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(record_writer);
 
     // Write primary domain stats to output as well
-    for (_, stats_entry) in prim_map.drain() {
-        bincode::serialize_into(&mut prim_stats_writer, &stats_entry)?;
+    for stats_entry in prim_map.values() {
+        bincode::serialize_into(&mut prim_stats_writer, stats_entry)?;
     }
 
     prim_stats_writer.flush()?;
     drop(prim_stats_writer);
 
-    println!("  [-] Done! Time elapsed: {:.1?}", start_time.elapsed());
-    println!("      * Input entries:    {}", line_counter);
-    println!("      * After processing: {}", id);
-    println!("      * Unique domains:   {}", prim_id_counter);
+    println!(" done! Time elapsed: {:.1?}\n", start_time.elapsed());
+    println!("   Input entries:    {}", line_counter);
+    println!("   After processing: {}", id);
+    println!("   Unique domains:   {}", prim_id_counter);
     println!();
 
     Ok(())
