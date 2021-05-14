@@ -8,10 +8,12 @@ bincode = "~1"
 clap = { version = "~2", features = ["yaml"] }
 counter = "~0.5"
 csv = "~1"
+erased-serde = "~0.3"
 fast-float = "~0.2"
 linereader = "~0.4"
 psl = "~2"
 rayon = "~1"
+rmp-serde = "~0.15"
 serde = { version = "~1", features = ["derive"] }
 serde_prefix = "~0.1"
 

@@ -38,9 +38,20 @@ pub struct FixedWindowFeatureVector {
     pub unique_query_ratio: f32,
 }
 
-//@formatter:off
-pub trait FeatureVector {}
-impl FeatureVector for PayloadFeatureVector {}
-impl FeatureVector for TimeWindowFeatureVector {}
-impl FeatureVector for FixedWindowFeatureVector {}
-//@formatter:on
+#[derive(Serialize)]
+pub enum FeatureVector {
+    Payload(PayloadFeatureVector),
+    Time(TimeWindowFeatureVector),
+    Fixed(FixedWindowFeatureVector),
+}
+
+// TODO: find a better solution to output a dynamic number of features
+#[derive(Serialize)]
+pub struct FeatureRow(
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub Option<FeatureVector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub Option<FeatureVector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub Option<FeatureVector>,
+);

@@ -4,6 +4,7 @@ extern crate clap;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use clap::App;
@@ -11,7 +12,7 @@ use csv::QuoteStyle;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use thesis_data_pipeline::cli::create_cli_file;
-use thesis_data_pipeline::feature_extraction::{extract_features_per_domain, ExtractOpts, FeatureRow};
+use thesis_data_pipeline::feature_extraction::{extract_features_per_domain, ExtractOpts};
 use thesis_data_pipeline::parse_dns::DnsPayload;
 use thesis_data_pipeline::shared_interface::{LogRecord, PrimaryDomainStats};
 
@@ -91,56 +92,70 @@ fn consume_input(opts: &Opts) -> (QueryMap, HashMap<u32, PrimaryDomainStats>) {
     (queries, prim_stats)
 }
 
-fn extract_features(opts: &ExtractOpts, queries: QueryMap, prim_stats: &HashMap<u32, PrimaryDomainStats>) -> Vec<FeatureRow> {
-    queries.into_par_iter()
+fn extract_features(file: &File, opts: &ExtractOpts, queries: QueryMap, prim_stats: &HashMap<u32, PrimaryDomainStats>) {
+
+    // Create CSV writer (with Arc and Mutex for thread sharing)
+    let csv_writer = Arc::new(Mutex::new(
+        csv::WriterBuilder::new()
+            .has_headers(false) // TODO: find a solution for dynamic headers
+            .quote_style(QuoteStyle::Never)
+            .from_writer(BufWriter::new(file))));
+
+    // TODO: write msgpack instead of CSV (faster and more compact)
+
+    // Process queries
+    let features = queries.into_par_iter()
+        // .map_with(Arc::clone(&csv_writer), |csv_writer, (prim_id, mut entries)| {
         .map(|(prim_id, mut entries)| {
-            let prim_len = prim_stats[&prim_id].length;
+            let prim = &prim_stats[&prim_id];
 
             // Sort entries by timestamp (first item (.0) in tuple is timestamp)
             entries.sort_by(|a, b| (&a.0).partial_cmp(&b.0).unwrap());
-            extract_features_per_domain(&opts, entries, prim_len)
+
+            // Extract features
+            let features = extract_features_per_domain(&opts, entries, prim.length);
+
+            // Don't write less than 1000 queries to reduce locking overhead (empirically determined)
+            if prim.count > 1000 {
+
+                // Lock writer and write features
+                let mut w = csv_writer.lock().unwrap();
+                features.into_iter().for_each(|fv| {
+                    w.serialize(fv).expect("Could not write feature vector to file.");
+                });
+
+                Vec::new()
+            } else { features }
         })
         .flatten()
-        .collect::<Vec<FeatureRow>>()
-}
+        .collect::<Vec<_>>();
 
-fn write_to_file(file: &File, features: Vec<FeatureRow>) {
-    let w = BufWriter::new(file);
-
-    let mut csv_writer = csv::WriterBuilder::new()
-        .has_headers(false) // TODO: find a solution for dynamic headers
-        .quote_style(QuoteStyle::Never)
-        .from_writer(w);
-
-    features.into_iter().for_each(|fv: FeatureRow| {
-        csv_writer.serialize(fv).expect("Could not write feature vector to file.");
+    // Write remaining feature vectors to file
+    let mut w = csv_writer.lock().unwrap();
+    features.iter().for_each(|fv| {
+        w.serialize(fv).expect("Could not write feature vector to file.");
     });
-
-    csv_writer.flush().expect("Error: Could not flush writer.");
+    w.flush().expect("Could not flush CSV writer.");
 }
 
 fn main() {
-    println!("======================\n[THESIS] Data Pipeline\n======================\n  -> Feature Extraction\n\n  [-] Loading data...");
+    print!("======================\n[THESIS] Data Pipeline\n======================\n\n-> Feature Extraction\n   [1.] Loading data...        ");
 
     // Parse CLI arguments
     let opts = parse_opts();
 
     // Load input data
-    let mut time = Instant::now();
+    let start = Instant::now();
     let (queries, prim_stats) = consume_input(&opts);
-    println!("  [-] Done! Time elapsed: {:.1?}", time.elapsed());
+    println!("done! Time elapsed: {:.1?}", start.elapsed());
 
-    time = Instant::now();
+    let time = Instant::now();
 
     // Extract features
-    println!("  [-] Extracting features...");
-    let features = extract_features(&opts.extract_opts, queries, &prim_stats);
-    println!("  [-] Done! Time elapsed: {:.1?}", time.elapsed());
+    print!("   [2.] Extracting features... ");
+    extract_features(&opts.out_features, &opts.extract_opts, queries, &prim_stats);
+    println!("done! Time elapsed: {:.1?}", time.elapsed());
 
-    time = Instant::now();
-
-    // Write to file
-    println!("  [-] Writing to file...");
-    write_to_file(&opts.out_features, features);
-    println!("  [-] Done! Time elapsed: {:.1?}", time.elapsed());
+    // Print total duration
+    println!("\n   Total duration: {:.1?}\n", start.elapsed());
 }
