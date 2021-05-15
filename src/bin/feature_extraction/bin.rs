@@ -4,7 +4,7 @@ extern crate clap;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use clap::App;
@@ -43,7 +43,7 @@ fn parse_opts() -> Opts {
         } else { None },
         fixed: if m.is_present("fixed") {
             let size = value_t_or_exit!(m, "fixed", usize);
-            if size <= 0 { panic!("Provided fixed window size is too short."); }
+            if size == 0 { panic!("Provided fixed window size is too short."); }
             Some(size)
         } else { None },
     };

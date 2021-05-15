@@ -32,17 +32,15 @@ impl TimeWindow {
             if front.0 >= min_ts { break; }
 
             // Pop expired (unwrap safe here because we know we have a value)
-            let (ts, payload) = self.content.pop_front().unwrap();
+            let (_, payload) = self.content.pop_front().unwrap();
             self.window_state.remove(&payload);
-
-            drop(ts);
             drop(payload);
         }
 
 
         // Update window state (accumulators) and subsequently add entry to window buffer
         self.window_state.add(&new_entry);
-        self.content.push_back((ts, new_entry.clone()));
+        self.content.push_back((ts, new_entry));
 
         // Construct features
         FeatureVector::Time(TimeWindowFeatureVector::from_window_state(&self.window_state, &self.open_space, &self.window_size))
@@ -79,7 +77,7 @@ impl FixedWindow {
 
         // Update window state (accumulators) and subsequently add entry to window buffer
         self.window_state.add(&new_entry);
-        self.content.push_back(new_entry.clone());
+        self.content.push_back(new_entry);
 
         // Construct features
         FeatureVector::Fixed(FixedWindowFeatureVector::from_window_state(&self.window_state, &self.open_space))
