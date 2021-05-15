@@ -25,7 +25,7 @@ pub enum ParseDnsError {
 const LABEL_SEP: u8 = b'.';
 
 /// Parse and validate/filter given byte vector as DNS query.
-pub fn parse_dns(dns_query: &Vec<u8>) -> Result<(Vec<u8>, DnsPayload), ParseDnsError> {
+pub fn parse_dns(dns_query: &[u8]) -> Result<(Vec<u8>, DnsPayload), ParseDnsError> {
     // TODO: thorough test suite
 
     // TODO: move out of this function
@@ -49,7 +49,7 @@ pub fn parse_dns(dns_query: &Vec<u8>) -> Result<(Vec<u8>, DnsPayload), ParseDnsE
         let labels_concat: &[u8] = dns_query.get(..q_len - prim.len() - 1).unwrap_or_default();
 
         // FILTER: no labels (check 2)
-        if labels_concat.len() == 0 { return Err(ParseDnsError::NoLabels); }
+        if labels_concat.is_empty() { return Err(ParseDnsError::NoLabels); }
 
         // TODO: filter invalid primary domain (with regex, noise)
 
@@ -73,7 +73,7 @@ pub fn parse_dns(dns_query: &Vec<u8>) -> Result<(Vec<u8>, DnsPayload), ParseDnsE
         }))
     } else {
         // FILTER: invalid DNS name (could not be parsed)
-        return Err(ParseDnsError::InvalidDnsName);
+        Err(ParseDnsError::InvalidDnsName)
     }
 }
 

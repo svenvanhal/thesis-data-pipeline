@@ -21,6 +21,13 @@ pub struct WindowState {
     ascii_map: [u8; 128],
 }
 
+impl Default for WindowState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 impl WindowState {
     pub fn new() -> Self {
         WindowState {
@@ -95,7 +102,7 @@ impl WindowState {
                     self.total_unique_label_len -= label.len();
 
                     // Find out if we need to update the max label length (only when we remove this label)
-                    if update_max == false && label.len() == self.max_label_len {
+                    if !update_max && label.len() == self.max_label_len {
                         update_max = true;
                     }
                 } else {

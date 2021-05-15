@@ -9,6 +9,7 @@ clap = { version = "~2", features = ["yaml"] }
 counter = "~0.5"
 csv = "~1"
 fast-float = "~0.2"
+flate2 = "~1"
 linereader = "~0.4"
 psl = "~2"
 rayon = "~1"
