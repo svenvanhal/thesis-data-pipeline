@@ -4,7 +4,7 @@ extern crate clap;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc};
 use std::time::Instant;
 
 use clap::App;
@@ -97,12 +97,12 @@ fn consume_input(opts: &Opts) -> (QueryMap, HashMap<u32, PrimaryDomainStats>) {
 fn extract_features(file: &File, opts: &ExtractOpts, queries: QueryMap, prim_stats: &HashMap<u32, PrimaryDomainStats>) {
 
     // Create CSV writer (with Arc and Mutex for thread sharing)
-    let gz_writer = GzEncoder::new(BufWriter::new(file), Compression::default());
+    let gz_writer = GzEncoder::new(BufWriter::new(file), Compression::fast());
 
-    let csv_writer = Mutex::new(csv::WriterBuilder::new()
+    let csv_writer = Arc::new(Mutex::new(csv::WriterBuilder::new()
         .has_headers(false) // TODO: find a solution for feature names
         .quote_style(QuoteStyle::Never)
-        .from_writer(gz_writer));
+        .from_writer(gz_writer)));
 
     // Process queries
     let features = queries.into_par_iter()
