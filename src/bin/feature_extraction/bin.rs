@@ -109,21 +109,18 @@ fn extract_features(file: &File, opts: &ExtractOpts, queries: QueryMap, prim_sta
         .map(|(prim_id, mut entries)| {
             let prim = &prim_stats[&prim_id];
 
-            // Sort entries by timestamp (first item (.0) in tuple is timestamp)
+            // Sort entries by timestamp (first item (.0) in tuple)
             entries.sort_by(|a, b| (&a.0).partial_cmp(&b.0).unwrap());
 
             // Extract features
             let features = extract_features_per_domain(&opts, entries, prim.length);
 
-            // Don't write less than 1000 queries to reduce locking overhead (empirically determined)
-            if prim.count > 1000 {
-
-                // Lock writer and write features
+            // Write to output file from thread for 1000 vectors or more (performance improvement, empirically determined)
+            if prim.count >= 1000 {
                 let mut w = csv_writer.lock().unwrap();
-                features.into_iter().for_each(|fv| {
+                features.iter().for_each(|fv| {
                     w.serialize(fv).expect("Could not write feature vector to file.");
                 });
-
                 Vec::new()
             } else { features }
         })
