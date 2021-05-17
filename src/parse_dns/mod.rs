@@ -1,4 +1,5 @@
 use psl::{List, Psl};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq)]
@@ -18,19 +19,43 @@ pub enum ParseDnsError {
     QueryLength,
     InvalidDnsName,
     UnknownSuffix,
+    ReservedSuffix,
     NoLabels,
     InvalidPrim,
+    NoStorageChannel,
 }
 
 const LABEL_SEP: u8 = b'.';
 
-/// Parse and validate/filter given byte vector as DNS query.
-pub fn parse_dns(dns_query: &[u8]) -> Result<(Vec<u8>, DnsPayload), ParseDnsError> {
-    // TODO: thorough test suite
+const WWW_LABEL: &[u8] = b"www";
+const TUNLAN_TLD: &[u8] = b"tun.lan";
+const FILTER_TLD: [&[u8]; 15] = [
+    b"arpa",
+    b"local",
+    b"intranet",
+    b"lan",
+    b"localhost",
+    b"example.com",
+    b"example.net",
+    b"example.org",
+    b"internal",
+    b"private",
+    b"corp",
+    b"home",
+    b"invalid",
+    b"test",
+    b"example",
+];
 
-    // TODO: move out of this function
-    // Prohibit negative timestamps and queries that cannot contain labels (at least len 5 --> a.b.c)
-    //
+
+
+lazy_static! {
+    static ref VALID_PRIM_RE: Regex = Regex::new(r"^(_?[a-zA-Z0-9]+[a-zA-Z0-9.-]*[a-zA-Z0-9]?)$").unwrap();
+}
+
+/// Parse and validate/filter given byte vector as DNS query.
+pub fn parse_dns(dns_query: &[u8]) -> Result<(String, DnsPayload), ParseDnsError> {
+    // TODO: thorough test suite
 
     let q_len = dns_query.len();
     if q_len < 5 { return Err(ParseDnsError::QueryLength); }
@@ -38,24 +63,53 @@ pub fn parse_dns(dns_query: &[u8]) -> Result<(Vec<u8>, DnsPayload), ParseDnsErro
 
     // Parse domain name
     if let Some(domain) = List.domain(&dns_query) {
-        let prim: Vec<u8> = domain.as_bytes().to_owned();
 
-        // FILTER: known suffix
-        if !domain.suffix().is_known() { return Err(ParseDnsError::UnknownSuffix); }
+        // Remove optional trailing dot
+        let domain = domain.trim();
+        let is_tunlan_prim = domain.as_bytes().eq(TUNLAN_TLD);
+
+        // FILTER: unknown suffix
+        if !domain.suffix().is_known() && !is_tunlan_prim {
+            return Err(ParseDnsError::UnknownSuffix);
+        }
+
+        // FILTER: special use TLD
+        for tld in FILTER_TLD {
+            if domain.suffix().as_bytes().ends_with(tld) {
+                // Skip tun.lan domain used for data collection
+                if is_tunlan_prim { continue; }
+
+                return Err(ParseDnsError::ReservedSuffix);
+            }
+        }
+
+        // Store owned version of primary domain (to return in the end as well)
+        let prim = match std::str::from_utf8(domain.as_bytes()) {
+            Ok(str) => {
+                // Check if domain follows spec
+                if !VALID_PRIM_RE.is_match(str) {
+                    return Err(ParseDnsError::InvalidPrim);
+                }
+                String::from(str)
+            }
+            Err(_) => return Err(ParseDnsError::InvalidPrim)
+        };
 
         // FILTER no labels (check 1)
         if q_len - prim.len() == 0 { return Err(ParseDnsError::NoLabels); }
 
-        let labels_concat: &[u8] = dns_query.get(..q_len - prim.len() - 1).unwrap_or_default();
-
         // FILTER: no labels (check 2)
+        let labels_concat: &[u8] = dns_query.get(..q_len - prim.len() - 1).unwrap_or_default();
         if labels_concat.is_empty() { return Err(ParseDnsError::NoLabels); }
 
-        // TODO: filter invalid primary domain (with regex, noise)
+        // FILTER: "www" label
+        if labels_concat.len() == 3 && labels_concat.eq(WWW_LABEL) {
+            return Err(ParseDnsError::NoStorageChannel);
+        }
 
         // Collect labels in vector
         let labels = labels_concat
-            .split(|c: &u8| *c == LABEL_SEP)
+            .split(|c| c == &LABEL_SEP)
             .map(|label| label.to_owned())
             .collect::<Vec<Vec<u8>>>();
 
@@ -72,7 +126,7 @@ pub fn parse_dns(dns_query: &[u8]) -> Result<(Vec<u8>, DnsPayload), ParseDnsErro
             payload_len: payload_len as u8,
         }))
     } else {
-        // FILTER: invalid DNS name (could not be parsed)
+// FILTER: invalid DNS name (could not be parsed)
         Err(ParseDnsError::InvalidDnsName)
     }
 }
@@ -89,8 +143,8 @@ mod tests {
             payload_len: 12,
         };
 
-        let q = "label1.label2.example.com".as_bytes().into();
-        let (_, result) = parse_dns(&q).unwrap();
+        let q = b"label1.label2.example.com";
+        let (_, result) = parse_dns(&q[..]).unwrap();
 
         assert_eq!(expected, result)
     }
@@ -103,25 +157,25 @@ mod tests {
 
     #[test]
     fn filter_no_labels() {
-        let no_label = b"example.com".to_vec().to_owned();
+        let no_label = b"example.com".as_ref();
         assert!(parse_dns(&no_label).is_err());
     }
 
     #[test]
     fn filter_empty_label() {
-        let empty_label = b".example.com".to_vec().to_owned();
+        let empty_label = b".example.com".as_ref();
         assert!(parse_dns(&empty_label).is_err());
     }
 
     #[test]
     fn filter_invalid_double_sep() {
-        let double_sep_empty = b"..example.com".to_vec().to_owned();
+        let double_sep_empty = b"..example.com".as_ref();
         assert!(parse_dns(&double_sep_empty).is_err())
     }
 
     #[test]
     fn filter_invalid_double_sep_not_empty() {
-        let double_sep_not_empty = b"test..test.example.com".to_vec().to_owned();
+        let double_sep_not_empty = b"test..test.example.com".as_ref();
         assert!(parse_dns(&double_sep_not_empty).is_err())
     }
 
@@ -145,21 +199,21 @@ mod tests {
 
     #[test]
     fn filter_root_label() {
-        let root_label = b".".to_vec().to_owned();
+        let root_label = b".".as_ref();
         assert!(parse_dns(&root_label).is_err())
     }
 
     #[test]
     fn filter_short_query_fast_path() {
-        let short_query = b".a.b".to_vec().to_owned();
+        let short_query = b".a.b".as_ref();
         // Fast path by checking len <= 4 (these cannot have labels)
         assert!(parse_dns(&short_query).is_err())
     }
 
     #[test]
     fn filter_unknown_prim() {
-        let unknown_prim = b"label.domain.com".to_vec().to_owned();
-        let unknown_tld = b"label.domain.localtld".to_vec().to_owned();
+        let unknown_prim = b"label.domain.com".as_ref();
+        let unknown_tld = b"label.domain.localtld".as_ref();
 
         // Make sure our query is valid with a known suffix...
         assert!(parse_dns(&unknown_prim).is_ok());
@@ -170,21 +224,15 @@ mod tests {
 
     #[test]
     fn actual_bytes_in_primary_domain() {
-        let bytes_in_domain = b"null\x00.linefeed\x0A.carriagereturn\x0D.com".to_vec().to_owned();
-        let expected = DnsPayload {
-            labels: vec![b"null\x00".to_vec(), b"linefeed\x0A".to_vec()],
-            payload_len: 14,
-        };
-
-        let (_, result) = parse_dns(&bytes_in_domain).unwrap();
-        assert_eq!(expected, result);
+        let bytes_in_domain = b"null\x00.linefeed\x0A.carriagereturn\x0D.com".as_ref();
+        assert!(parse_dns(&bytes_in_domain).is_err());
     }
 
     #[test]
     fn payload_lengths() {
-        let one_label = b"one.domain.com".to_vec().to_owned();
-        let two_label = b"two.two.domain.com".to_vec().to_owned();
-        let ten_label = b"a.a.a.a.a.a.a.a.a.a.domain.com".to_vec().to_owned();
+        let one_label = b"one.domain.com".as_ref();
+        let two_label = b"two.two.domain.com".as_ref();
+        let ten_label = b"a.a.a.a.a.a.a.a.a.a.domain.com".as_ref();
 
         let (_, pl_one) = parse_dns(&one_label).unwrap();
         let (_, pl_two) = parse_dns(&two_label).unwrap();

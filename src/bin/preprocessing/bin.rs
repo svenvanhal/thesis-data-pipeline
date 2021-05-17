@@ -68,20 +68,16 @@ fn parse_opts() -> Opts {
         }
     };
 
-    Opts {
-        in_file,
-        out_records,
-        out_prim,
-        quiet,
-    }
+    Opts { in_file, out_records, out_prim, quiet }
 }
 
+/// TODO: filter fast retransmissions
 fn main() {
     let opts = parse_opts();
     let start_time = Instant::now();
 
     // Primary domain <--> (id, length, count)
-    let mut prim_map: HashMap<Vec<u8>, PrimaryDomainStats> = HashMap::new();
+    let mut prim_map: HashMap<String, PrimaryDomainStats> = HashMap::new();
 
     // Count lines in file for progress bar (and seek to start for reprocessing)
     let time_count = Instant::now();
@@ -171,4 +167,3 @@ fn main() {
     eprintln!("           Primary domains: {}\n", prim_id_counter.to_formatted_string(&Locale::en));
     eprintln!("        {}Finished in {:.1?}", SPARKLE, start_time.elapsed());
 }
-
