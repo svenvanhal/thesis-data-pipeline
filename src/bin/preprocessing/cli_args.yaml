@@ -1,10 +1,14 @@
-name: Preprocessing
-about: Thesis Data Pipeline - Preprocessing
+name: Thesis Data Pipeline - Preprocessing
 
 settings:
   - ArgRequiredElseHelp
 
 args:
+  - input_file:
+      help: Input file of tab-separated DNS timestamps and queries.
+      multiple: false
+      required: true
+
   - out_records:
       help: Output file for processed (binary) log records.
       short: r
@@ -14,9 +18,15 @@ args:
       takes_value: true
 
   - out_prim_stats:
-      help: Output file for processed (binary) log records.
+      help: Output file for processed (binary) primary domain statistics.
       short: p
       long: out-prim
       multiple: false
       required: true
       takes_value: true
+
+  - quiet:
+      help: Quiet execution (always overwrite existing files, no progress bar, etc.)
+      short: q
+      multiple: false
+      takes_value: false

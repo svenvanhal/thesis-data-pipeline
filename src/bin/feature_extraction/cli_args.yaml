@@ -1,5 +1,4 @@
-name: Feature Extraction
-about: Thesis Data Pipeline - Feature Extraction
+name: Thesis Data Pipeline - Feature Extraction
 
 settings:
   - ArgRequiredElseHelp
@@ -12,9 +11,15 @@ args:
       required: true
       takes_value: true
 
-  - in_prim_stats:
+  - in_prim:
       help: Input file for processed (binary) primary domain statistics.
       long: in-prim
+      multiple: false
+      required: true
+      takes_value: true
+
+  - out_features:
+      help: Output file for extracted features.
       multiple: false
       required: true
       takes_value: true
@@ -43,15 +48,13 @@ args:
       takes_value: true
       required: false
 
-  - out_features:
-      help: Output file for extracted features.
-      long: out-features
+  - quiet:
+      help: Quiet execution (always overwrite existing files, no progress bar, etc.)
+      short: q
       multiple: false
-      required: true
-      takes_value: true
+      takes_value: false
 
   # TODO: argument to split test set based on domains (and two different feature set files)
-
 
 groups:
   - feature_extraction:

@@ -3,63 +3,122 @@ extern crate clap;
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::time::Instant;
 
 use clap::App;
+use dialoguer::console::{Emoji, style};
 use linereader::LineReader;
+use num_format::{Locale, ToFormattedString};
 
-use thesis_data_pipeline::cli::create_cli_file;
+use thesis_data_pipeline::cli;
 use thesis_data_pipeline::parse_dns::parse_dns;
 use thesis_data_pipeline::parse_log::parse_log_line;
 use thesis_data_pipeline::shared_interface::{LogRecord, PrimaryDomainStats};
 
-fn parse_opts() -> (File, File) {
+const ASCII_TAB: u8 = b'\t';
+
+static PAPER: Emoji<'_, '_> = Emoji("📃 ", "");
+static SPARKLE: Emoji<'_, '_> = Emoji("✨ ", "");
+static BAR_CHART: Emoji<'_, '_> = Emoji("📊 ", "");
+
+struct Opts {
+    in_file: File,
+    out_records: File,
+    out_prim: File,
+    quiet: bool,
+}
+
+fn parse_opts() -> Opts {
     let yml = load_yaml!("cli_args.yaml");
     let m = App::from_yaml(yml).get_matches();
 
-    let out_records = create_cli_file(m.value_of("out_records"), "out_records");
-    let out_prim_stats = create_cli_file(m.value_of("out_prim_stats"), "out_prim_stats");
+    let quiet = m.is_present("quiet");
 
-    (out_records, out_prim_stats)
+    let in_file = match m.value_of("input_file") {
+        Some(input) => match cli::parse_input_file(input) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(Box::new(err))
+        }
+        None => {
+            let err = Box::new(cli::CliError::MissingInputArg(String::from("<input_file>")));
+            cli::exit_with_error(err)
+        }
+    };
+
+    let out_records = match m.value_of("out_records") {
+        Some(input) => match cli::parse_output_file(input, quiet) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(Box::new(err))
+        }
+        None => {
+            let err = Box::new(cli::CliError::MissingInputArg(String::from("--out-records")));
+            cli::exit_with_error(err)
+        }
+    };
+
+    let out_prim = match m.value_of("out_prim_stats") {
+        Some(input) => match cli::parse_output_file(input, quiet) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(Box::new(err))
+        }
+        None => {
+            let err = Box::new(cli::CliError::MissingInputArg(String::from("--out-prim")));
+            cli::exit_with_error(err)
+        }
+    };
+
+    Opts {
+        in_file,
+        out_records,
+        out_prim,
+        quiet,
+    }
 }
 
-const ASCII_TAB: u8 = b'\t';
+fn main() {
+    let opts = parse_opts();
+    let start_time = Instant::now();
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    print!("======================\n[THESIS] Data Pipeline\n======================\n\n-> Preprocessing\n   [1.] Working... ");
+    // Primary domain <--> (id, length, count)
+    let mut prim_map: HashMap<Vec<u8>, PrimaryDomainStats> = HashMap::new();
 
-    let (out_records, out_prim_stats) = parse_opts();
+    // Count lines in file for progress bar (and seek to start for reprocessing)
+    let time_count = Instant::now();
+    let mut in_file = &opts.in_file;
+    let lc = match linecount::count_lines(in_file) {
+        Ok(count) => count,
+        Err(e) => cli::exit_with_error(Box::new(e))
+    };
+    if let Err(e) = in_file.seek(SeekFrom::Start(0)) {
+        cli::exit_with_error(Box::new(e));
+    }
+
+    cli::print_output(style(format!("\n           (Counted lines in {:.1?})\n\n", time_count.elapsed())).dim().to_string(), opts.quiet);
+    cli::print_output(format!("{}   {}Processing log entries...\n", style("[1/2]").bold().dim(), PAPER), opts.quiet);
+
+    // Make progress bar
+    let pb = cli::make_progress_bar(lc as u64, opts.quiet);
+
+    // Initialize file reader
+    let mut reader = LineReader::new(BufReader::new(in_file));
+
+    // Initialize file writers
+    let mut record_writer = BufWriter::new(&opts.out_records);
+    let mut prim_stats_writer = BufWriter::new(&opts.out_prim);
 
     // Initialize counters
     let mut id: u32 = 0;
     let mut prim_id_counter: u32 = 0;
 
-    // Primary domain <--> (id, length, count)
-    let mut prim_map: HashMap<Vec<u8>, PrimaryDomainStats> = HashMap::new();
-
-    // Initialize stdin reader
-    let stdin = std::io::stdin();
-    let stdin_lock = stdin.lock();
-    let mut reader = LineReader::new(stdin_lock);
-
-    // Initialize file writers
-    let mut record_writer = BufWriter::new(out_records);
-    let mut prim_stats_writer = BufWriter::new(out_prim_stats);
-
-    let start_time = Instant::now();
-
-    let mut line_counter: usize = 0;
-
     // Read input line-by-line
     while let Some(Ok(line)) = reader.next_line() {
-        line_counter += 1;
 
         // Parse log line
         if let Ok((ts, query)) = parse_log_line(&line, ASCII_TAB) {
 
-            // TODO: parse negative/invalid ts?
-            // if ts < 0. { return Err(ParseDnsError::NegTimestamp); }
+            // FILTER: negative/invalid timestamp
+            if ts < 0. { continue; }
 
             // Parse DNS payload
             if let Ok((primary_domain, payload)) = parse_dns(&query) {
@@ -77,31 +136,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let row_data = LogRecord { id, prim_id: prim_entry.id, ts, payload };
 
                 // Write output record
-                bincode::serialize_into(&mut record_writer, &row_data)?;
+                if let Err(e) = bincode::serialize_into(&mut record_writer, &row_data) {
+                    cli::exit_with_error(Box::new(e));
+                }
 
                 // Increase counts for prim and queries
                 prim_entry.count += 1;
                 id += 1;
             }
         }
-    }
 
-    record_writer.flush()?;
-    drop(record_writer);
+        if Option::is_some(&pb) { pb.as_ref().unwrap().inc(1); }
+    }
+    if Option::is_some(&pb) { pb.as_ref().unwrap().finish(); }
+
+    if let Err(e) = record_writer.flush() {
+        cli::exit_with_error(Box::new(e));
+    }
 
     // Write primary domain stats to output as well
+    cli::print_output(format!("\n{}   {}Exporting primary domain statistics... ", style("[2/2]").bold().dim(), BAR_CHART), opts.quiet);
     for stats_entry in prim_map.values() {
-        bincode::serialize_into(&mut prim_stats_writer, stats_entry)?;
+        if let Err(e) = bincode::serialize_into(&mut prim_stats_writer, stats_entry) {
+            cli::exit_with_error(Box::new(e));
+        }
     }
+    if let Err(e) = prim_stats_writer.flush() {
+        cli::exit_with_error(Box::new(e));
+    }
+    cli::print_output("Done!\n\n".to_string(), opts.quiet);
 
-    prim_stats_writer.flush()?;
-    drop(prim_stats_writer);
-
-    println!(" done! Time elapsed: {:.1?}\n", start_time.elapsed());
-    println!("   Input entries:    {}", line_counter);
-    println!("   After processing: {}", id);
-    println!("   Unique domains:   {}", prim_id_counter);
-    println!();
-
-    Ok(())
+    eprintln!("           Input lines:     {}", lc.to_formatted_string(&Locale::en));
+    eprintln!("           Output entries:  {}", id.to_formatted_string(&Locale::en));
+    eprintln!("           Primary domains: {}\n", prim_id_counter.to_formatted_string(&Locale::en));
+    eprintln!("        {}Finished in {:.1?}", SPARKLE, start_time.elapsed());
 }
+
