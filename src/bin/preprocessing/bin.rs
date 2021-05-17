@@ -8,7 +8,6 @@ use std::time::Instant;
 
 use clap::App;
 use dialoguer::console::{Emoji, style};
-use indicatif::{ProgressBar, ProgressStyle};
 use linereader::LineReader;
 use num_format::{Locale, ToFormattedString};
 
@@ -34,6 +33,8 @@ fn parse_opts() -> Opts {
     let yml = load_yaml!("cli_args.yaml");
     let m = App::from_yaml(yml).get_matches();
 
+    let quiet = m.is_present("quiet");
+
     let in_file = match m.value_of("input_file") {
         Some(input) => match cli::parse_input_file(input) {
             Ok(file) => file,
@@ -46,7 +47,7 @@ fn parse_opts() -> Opts {
     };
 
     let out_records = match m.value_of("out_records") {
-        Some(input) => match cli::parse_output_file(input) {
+        Some(input) => match cli::parse_output_file(input, quiet) {
             Ok(file) => file,
             Err(err) => cli::exit_with_error(Box::new(err))
         }
@@ -57,7 +58,7 @@ fn parse_opts() -> Opts {
     };
 
     let out_prim = match m.value_of("out_prim_stats") {
-        Some(input) => match cli::parse_output_file(input) {
+        Some(input) => match cli::parse_output_file(input, quiet) {
             Ok(file) => file,
             Err(err) => cli::exit_with_error(Box::new(err))
         }
@@ -66,8 +67,6 @@ fn parse_opts() -> Opts {
             cli::exit_with_error(err)
         }
     };
-
-    let quiet = m.is_present("quiet");
 
     Opts {
         in_file,
@@ -95,11 +94,11 @@ fn main() {
         cli::exit_with_error(Box::new(e));
     }
 
-    print_output(style(format!("\n           (Counted lines in {:.1?})\n\n", time_count.elapsed())).dim().to_string(), opts.quiet);
-    print_output(format!("{}   {}Processing log entries...\n", style("[1/2]").bold().dim(), PAPER), opts.quiet);
+    cli::print_output(style(format!("\n           (Counted lines in {:.1?})\n\n", time_count.elapsed())).dim().to_string(), opts.quiet);
+    cli::print_output(format!("{}   {}Processing log entries...\n", style("[1/2]").bold().dim(), PAPER), opts.quiet);
 
     // Make progress bar
-    let pb = make_progress_bar(lc as u64, opts.quiet);
+    let pb = cli::make_progress_bar(lc as u64, opts.quiet);
 
     // Initialize file reader
     let mut reader = LineReader::new(BufReader::new(in_file));
@@ -156,7 +155,7 @@ fn main() {
     }
 
     // Write primary domain stats to output as well
-    print_output(format!("\n{}   {}Exporting primary domain statistics... ", style("[2/2]").bold().dim(), BAR_CHART), opts.quiet);
+    cli::print_output(format!("\n{}   {}Exporting primary domain statistics... ", style("[2/2]").bold().dim(), BAR_CHART), opts.quiet);
     for stats_entry in prim_map.values() {
         if let Err(e) = bincode::serialize_into(&mut prim_stats_writer, stats_entry) {
             cli::exit_with_error(Box::new(e));
@@ -165,8 +164,7 @@ fn main() {
     if let Err(e) = prim_stats_writer.flush() {
         cli::exit_with_error(Box::new(e));
     }
-    print_output("Done!\n\n".to_string(), opts.quiet);
-
+    cli::print_output("Done!\n\n".to_string(), opts.quiet);
 
     eprint!("           Input lines:     {}\n", lc.to_formatted_string(&Locale::en));
     eprint!("           Output entries:  {}\n", id.to_formatted_string(&Locale::en));
@@ -174,17 +172,3 @@ fn main() {
     eprint!("        {}Finished in {:.1?}\n", SPARKLE, start_time.elapsed());
 }
 
-fn make_progress_bar(size: u64, quiet: bool) -> Option<ProgressBar> {
-    if quiet { return None; }
-    let pb = ProgressBar::new(size);
-    pb.set_draw_rate(5);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("[{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})")
-        .progress_chars("#>-"));
-    Some(pb)
-}
-
-fn print_output(what: String, quiet: bool) {
-    if quiet { return; }
-    eprint!("{}", what);
-}

@@ -52,12 +52,12 @@ pub fn extract_features_per_domain(opts: &ExtractOpts, queries: Vec<(f64, DnsPay
 
             match &mut time_window {
                 None => {}
-                Some(win) => fv.push(win.process_entry(ts.clone(), payload.clone()))
+                Some(win) => fv.push(win.process_entry(ts, Rc::clone(&payload)))
             }
 
             match &mut fixed_window {
                 None => {}
-                Some(win) => fv.push(win.process_entry(payload.clone()))
+                Some(win) => fv.push(win.process_entry(Rc::clone(&payload)))
             }
 
             fv

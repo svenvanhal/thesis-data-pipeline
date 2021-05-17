@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use dialoguer::Confirm;
 use dialoguer::theme::ColorfulTheme;
+use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Debug)]
 pub enum CliError {
@@ -28,12 +29,12 @@ impl fmt::Display for CliError {
     }
 }
 
-pub fn parse_output_file(input: &str) -> Result<File, CliError> {
+pub fn parse_output_file(input: &str, force_overwrite: bool) -> Result<File, CliError> {
     let path = PathBuf::from(input);
 
     if path.is_dir() {
         Err(CliError::FileIsDirectory(input.to_string()))
-    } else if path.exists() {
+    } else if path.exists() && !force_overwrite {
         //
         match Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt(format!("File \"{}\" exists, overwrite?", input))
@@ -71,4 +72,19 @@ pub fn parse_input_file(input: &str) -> Result<File, CliError> {
 pub fn exit_with_error(e: Box<dyn std::error::Error>) -> ! {
     eprintln!("Error: {}", e);
     std::process::exit(1)
+}
+
+pub fn print_output(what: String, quiet: bool) {
+    if quiet { return; }
+    eprint!("{}", what);
+}
+
+pub fn make_progress_bar(size: u64, quiet: bool) -> Option<ProgressBar> {
+    if quiet { return None; }
+    let pb = ProgressBar::new(size);
+    pb.set_draw_rate(5);
+    pb.set_style(ProgressStyle::default_bar()
+        .template("[{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})")
+        .progress_chars("#>-"));
+    Some(pb)
 }
