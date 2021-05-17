@@ -1,16 +1,17 @@
+use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
-use dialoguer::theme::ColorfulTheme;
+
 use dialoguer::Confirm;
-use std::fmt;
+use dialoguer::theme::ColorfulTheme;
 
 #[derive(Debug)]
 pub enum CliError {
     MissingInputArg(String),
-    FileNotFound,
-    FileIsDirectory,
-    FileExists,
-    IO(std::io::Error),
+    FileNotFound(String),
+    FileIsDirectory(String),
+    FileExists(String),
+    IO(String, std::io::Error),
 }
 
 impl std::error::Error for CliError {}
@@ -19,52 +20,50 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &*self {
             CliError::MissingInputArg(arg) => write!(f, "Missing input argument: {}.", arg),
-            CliError::FileNotFound => write!(f, "Could not find file."),
-            CliError::FileIsDirectory => write!(f, "Provided file is a directory."),
-            CliError::FileExists => write!(f, "File already exists."),
-            CliError::IO(err) => write!(f, "I/O error: {}.", err),
+            CliError::FileNotFound(arg) => write!(f, "Could not find file \"{}\".", arg),
+            CliError::FileIsDirectory(arg) => write!(f, "Provided file \"{}\" is a directory.", arg),
+            CliError::FileExists(arg) => write!(f, "File \"{}\" already exists.", arg),
+            CliError::IO(arg, err) => write!(f, "I/O error for {}: {}.", arg, err),
         }
     }
 }
 
-// impl Into<Box<CliError>> for CliError {
-//     fn into(self) -> Box<CliError> {
-//         Box::new(self)
-//     }
-// }
+pub fn parse_output_file(input: &str) -> Result<File, CliError> {
+    let path = PathBuf::from(input);
 
-pub fn parse_output_file(path: PathBuf) -> Result<File, CliError> {
     if path.is_dir() {
-        Err(CliError::FileIsDirectory)
+        Err(CliError::FileIsDirectory(input.to_string()))
     } else if path.exists() {
         //
         match Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("File \"{}\" exists, overwrite?")
-            .default(false).interact_opt()
+            .with_prompt(format!("File \"{}\" exists, overwrite?", input))
+            .default(false).wait_for_newline(true).interact_opt()
         {
-            Ok(Some(true)) => match OpenOptions::new().read(true).write(true).truncate(true).open(&path) {
+            Ok(Some(true)) => match OpenOptions::new().write(true).truncate(true).open(&path) {
                 Ok(file) => Ok(file),
-                Err(io_err) => Err(CliError::IO(io_err))
+                Err(io_err) => Err(CliError::IO(input.to_string(), io_err))
             },
-            _ => Err(CliError::FileExists)
+            _ => Err(CliError::FileExists(input.to_string()))
         }
     } else {
         match File::create(path) {
             Ok(file) => Ok(file),
-            Err(io_err) => Err(CliError::IO(io_err))
+            Err(io_err) => Err(CliError::IO(input.to_string(), io_err))
         }
     }
 }
 
-pub fn parse_input_file(path: PathBuf) -> Result<File, CliError> {
+pub fn parse_input_file(input: &str) -> Result<File, CliError> {
+    let path = PathBuf::from(input);
+
     if !path.exists() {
-        Err(CliError::FileNotFound)
+        Err(CliError::FileNotFound(input.to_string()))
     } else if path.is_dir() {
-        Err(CliError::FileIsDirectory)
+        Err(CliError::FileIsDirectory(input.to_string()))
     } else {
-        match File::create(path) {
+        match File::open(path) {
             Ok(file) => Ok(file),
-            Err(err) => Err(CliError::IO(err))
+            Err(io_err) => Err(CliError::IO(input.to_string(), io_err))
         }
     }
 }

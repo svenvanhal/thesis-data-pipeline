@@ -25,3 +25,9 @@ args:
       multiple: false
       required: true
       takes_value: true
+
+  - quiet:
+      help: Quiet execution (always overwrite existing files, no progress bar, etc.)
+      short: q
+      multiple: false
+      takes_value: false
