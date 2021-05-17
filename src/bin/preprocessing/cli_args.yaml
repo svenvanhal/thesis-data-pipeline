@@ -1,5 +1,4 @@
-name: Preprocessing
-about: Thesis Data Pipeline - Preprocessing
+name: Thesis Data Pipeline - Preprocessing
 
 settings:
   - ArgRequiredElseHelp
