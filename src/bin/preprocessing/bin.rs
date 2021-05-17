@@ -166,9 +166,9 @@ fn main() {
     }
     cli::print_output("Done!\n\n".to_string(), opts.quiet);
 
-    eprint!("           Input lines:     {}\n", lc.to_formatted_string(&Locale::en));
-    eprint!("           Output entries:  {}\n", id.to_formatted_string(&Locale::en));
-    eprint!("           Primary domains: {}\n\n", prim_id_counter.to_formatted_string(&Locale::en));
-    eprint!("        {}Finished in {:.1?}\n", SPARKLE, start_time.elapsed());
+    eprintln!("           Input lines:     {}", lc.to_formatted_string(&Locale::en));
+    eprintln!("           Output entries:  {}", id.to_formatted_string(&Locale::en));
+    eprintln!("           Primary domains: {}\n", prim_id_counter.to_formatted_string(&Locale::en));
+    eprintln!("        {}Finished in {:.1?}", SPARKLE, start_time.elapsed());
 }
 

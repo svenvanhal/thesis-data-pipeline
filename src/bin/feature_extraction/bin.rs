@@ -215,5 +215,5 @@ fn main() {
     extract_features(&opts.out_features, &opts, queries, &prim_stats, n_entries);
 
     // Print total duration
-    eprint!("\n        {}Finished in {:.1?}\n", SPARKLE, start.elapsed());
+    eprintln!("\n        {}Finished in {:.1?}", SPARKLE, start.elapsed());
 }
