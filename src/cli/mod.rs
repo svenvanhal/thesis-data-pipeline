@@ -9,6 +9,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 #[derive(Debug)]
 pub enum CliError {
     MissingInputArg(String),
+    InvalidArgument(String, String),
     FileNotFound(String),
     FileIsDirectory(String),
     FileExists(String),
@@ -21,6 +22,7 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &*self {
             CliError::MissingInputArg(arg) => write!(f, "Missing input argument: {}.", arg),
+            CliError::InvalidArgument(arg, msg) => write!(f, "Invalid input for argument \"{}\": {}.", arg, msg),
             CliError::FileNotFound(arg) => write!(f, "Could not find file \"{}\".", arg),
             CliError::FileIsDirectory(arg) => write!(f, "Provided file \"{}\" is a directory.", arg),
             CliError::FileExists(arg) => write!(f, "File \"{}\" already exists.", arg),

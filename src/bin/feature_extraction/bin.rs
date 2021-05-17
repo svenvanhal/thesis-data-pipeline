@@ -40,6 +40,29 @@ fn parse_opts() -> Opts {
 
     let quiet = m.is_present("quiet");
 
+    // Parse and validate feature extraction arguments
+    let extract_opts = ExtractOpts {
+        payload: m.is_present("payload"),
+
+        time: if m.is_present("time") {
+            let duration = value_t_or_exit!(m, "time", f32);
+            if duration <= 0. {
+                let err = Box::new(cli::CliError::InvalidArgument(String::from("-t/--time"), String::from("window duration too short")));
+                cli::exit_with_error(err)
+            }
+            Some(duration)
+        } else { None },
+
+        fixed: if m.is_present("fixed") {
+            let size = value_t_or_exit!(m, "fixed", usize);
+            if size == 0 {
+                let err = Box::new(cli::CliError::InvalidArgument(String::from("-f/--fixed"), String::from("window size too small")));
+                cli::exit_with_error(err)
+            }
+            Some(size)
+        } else { None },
+    };
+
     // Parse and validate input/output file arguments
     let in_records = match m.value_of("in_records") {
         Some(input) => match cli::parse_input_file(input) {
@@ -74,28 +97,7 @@ fn parse_opts() -> Opts {
         }
     };
 
-    // Parse and validate feature extraction arguments
-    let extract_opts = ExtractOpts {
-        payload: m.is_present("payload"),
-        time: if m.is_present("time") {
-            let duration = value_t_or_exit!(m, "time", f32);
-            if duration <= 0. { panic!("Provided time window duration is too short."); }
-            Some(duration)
-        } else { None },
-        fixed: if m.is_present("fixed") {
-            let size = value_t_or_exit!(m, "fixed", usize);
-            if size == 0 { panic!("Provided fixed window size is too short."); }
-            Some(size)
-        } else { None },
-    };
-
-    Opts {
-        extract_opts,
-        in_records,
-        in_prim,
-        out_features,
-        quiet,
-    }
+    Opts { extract_opts, in_records, in_prim, out_features, quiet }
 }
 
 fn consume_input(opts: &Opts) -> (QueryMap, HashMap<u32, PrimaryDomainStats>, u64) {
@@ -154,41 +156,52 @@ fn extract_features(file: &File, opts: &Opts, queries: QueryMap, prim_stats: &Ha
     // Process queries
     let features = queries.into_par_iter()
         .map(|(prim_id, mut entries)| {
-            let prim = &prim_stats[&prim_id];
+            // Check for empty entry vec, so unwrap when ordering below is safe
+            if entries.is_empty() { return Vec::new(); }
 
             // Sort entries by timestamp (first item (.0) in tuple)
             entries.sort_by(|a, b| (&a.0).partial_cmp(&b.0).unwrap());
 
             // Extract features
+            let prim = &prim_stats[&prim_id];
             let features = extract_features_per_domain(extract_opts, entries, prim.length);
 
             // Write to output file from thread for 1000 vectors or more (performance improvement, empirically determined)
             let ret_val = if prim.count >= 1000 {
                 let mut w = csv_writer.lock().unwrap();
                 features.iter().for_each(|fv| {
-                    w.serialize(fv).expect("Could not write feature vector to file.");
+                    if let Err(e) = w.serialize(fv) {
+                        cli::exit_with_error(Box::new(e));
+                    }
                 });
                 Vec::new()
             } else { features };
 
-            // Update progress bar
-            let pb_lock = pb.lock().unwrap();
-            if Option::is_some(&pb_lock) { pb_lock.as_ref().unwrap().inc(prim.count as u64); }
+            // Update progress bar (soft fail on error)
+            if let Ok(pb_lock) = pb.lock() {
+                if Option::is_some(&pb_lock) { pb_lock.as_ref().unwrap().inc(prim.count as u64); }
+            }
 
             ret_val
         })
         .flatten().collect::<Vec<_>>();
 
-    // Finalize progress bar
-    let pb_lock = pb.lock().unwrap();
-    if Option::is_some(&pb_lock) { pb_lock.as_ref().unwrap().finish(); }
+    // Finalize progress bar (soft fail on error)
+    if let Ok(pb_lock) = pb.lock() {
+        if Option::is_some(&pb_lock) { pb_lock.as_ref().unwrap().finish(); }
+    }
 
     // Write remaining feature vectors to file
     let mut w = csv_writer.lock().unwrap();
     features.iter().for_each(|fv| {
-        w.serialize(fv).expect("Could not write feature vector to file.");
+        if let Err(e) = w.serialize(fv) {
+            cli::exit_with_error(Box::new(e));
+        }
     });
-    w.flush().expect("Could not flush CSV writer.");
+
+    if let Err(e) = w.flush() {
+        cli::exit_with_error(Box::new(e));
+    }
 }
 
 fn main() {
