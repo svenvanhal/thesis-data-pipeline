@@ -3,33 +3,54 @@ extern crate clap;
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Write, BufReader};
 use std::time::Instant;
 
 use clap::App;
 use linereader::LineReader;
 
-use thesis_data_pipeline::cli::create_cli_file;
 use thesis_data_pipeline::parse_dns::parse_dns;
 use thesis_data_pipeline::parse_log::parse_log_line;
 use thesis_data_pipeline::shared_interface::{LogRecord, PrimaryDomainStats};
+use std::path::PathBuf;
+use thesis_data_pipeline::cli;
+use indicatif::ProgressBar;
 
-fn parse_opts() -> (File, File) {
+fn parse_opts() -> (File, File, File) {
     let yml = load_yaml!("cli_args.yaml");
     let m = App::from_yaml(yml).get_matches();
 
-    let out_records = create_cli_file(m.value_of("out_records"), "out_records");
-    let out_prim_stats = create_cli_file(m.value_of("out_prim_stats"), "out_prim_stats");
+    let in_file = match m.value_of("out_records") {
+        Some(path) => match cli::parse_input_file(PathBuf::from(path)) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(err.into())
+        }
+        None => cli::exit_with_error(cli::CliError::MissingInputArg(String::from("[input file]")).into())
+    };
 
-    (out_records, out_prim_stats)
+    let out_records = match m.value_of("out_records") {
+        Some(path) => match cli::parse_output_file(PathBuf::from(path)) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(err.into())
+        }
+        None => cli::exit_with_error(cli::CliError::MissingInputArg(String::from("--out-records")).into())
+    };
+
+    let out_prim_stats = match m.value_of("out_prim_stats") {
+        Some(path) => match cli::parse_output_file(PathBuf::from(path)) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(err.into())
+        }
+        None => cli::exit_with_error(cli::CliError::MissingInputArg(String::from("--out-prim")).into())
+    };
+
+    (in_file, out_records, out_prim_stats)
 }
 
 const ASCII_TAB: u8 = b'\t';
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    print!("======================\n[THESIS] Data Pipeline\n======================\n\n-> Preprocessing\n   [1.] Working... ");
-
-    let (out_records, out_prim_stats) = parse_opts();
+    let (in_file, out_records, out_prim_stats) = parse_opts();
 
     // Initialize counters
     let mut id: u32 = 0;
@@ -38,22 +59,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Primary domain <--> (id, length, count)
     let mut prim_map: HashMap<Vec<u8>, PrimaryDomainStats> = HashMap::new();
 
-    // Initialize stdin reader
-    let stdin = std::io::stdin();
-    let stdin_lock = stdin.lock();
-    let mut reader = LineReader::new(stdin_lock);
+    // Count lines in file for progress bar
+    let lc = match linecount::count_lines(&in_file) {
+        Ok(count) => count,
+        Err(e) => cli::exit_with_error(e.into())
+    };
+
+    // Initialize file reader
+    let mut reader = LineReader::new(BufReader::new(in_file));
 
     // Initialize file writers
     let mut record_writer = BufWriter::new(out_records);
     let mut prim_stats_writer = BufWriter::new(out_prim_stats);
 
+    // Initialize progress bar
+    let pb = ProgressBar::new(lc as u64);
+
     let start_time = Instant::now();
 
-    let mut line_counter: usize = 0;
+    let mut read_counter: usize = 0;
 
     // Read input line-by-line
     while let Some(Ok(line)) = reader.next_line() {
-        line_counter += 1;
+        read_counter += 1;
 
         // Parse log line
         if let Ok((ts, query)) = parse_log_line(&line, ASCII_TAB) {
@@ -84,6 +112,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 id += 1;
             }
         }
+
+        pb.inc(1);
     }
 
     record_writer.flush()?;
@@ -98,10 +128,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(prim_stats_writer);
 
     println!(" done! Time elapsed: {:.1?}\n", start_time.elapsed());
-    println!("   Input entries:    {}", line_counter);
+    println!("   Input entries:    {}", read_counter);
     println!("   After processing: {}", id);
-    println!("   Unique domains:   {}", prim_id_counter);
-    println!();
+    println!("   Unique domains:   {}\n", prim_id_counter);
 
     Ok(())
 }

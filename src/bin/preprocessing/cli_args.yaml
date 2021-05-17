@@ -5,6 +5,11 @@ settings:
   - ArgRequiredElseHelp
 
 args:
+  - input_file:
+      help: Input file of tab-separated DNS timestamps and queries.
+      multiple: false
+      required: true
+
   - out_records:
       help: Output file for processed (binary) log records.
       short: r
@@ -14,7 +19,7 @@ args:
       takes_value: true
 
   - out_prim_stats:
-      help: Output file for processed (binary) log records.
+      help: Output file for processed (binary) primary domain statistics.
       short: p
       long: out-prim
       multiple: false
