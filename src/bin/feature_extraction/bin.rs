@@ -29,7 +29,7 @@ static SPARKLE: Emoji<'_, '_> = Emoji("✨ ", "");
 pub struct Opts {
     pub extract_opts: ExtractOpts,
     pub in_records: File,
-    pub in_prim_stats: File,
+    pub in_prim: File,
     pub out_features: File,
     quiet: bool,
 }
@@ -40,7 +40,41 @@ fn parse_opts() -> Opts {
 
     let quiet = m.is_present("quiet");
 
-    // Parse and validate arguments
+    // Parse and validate input/output file arguments
+    let in_records = match m.value_of("in_records") {
+        Some(input) => match cli::parse_input_file(input) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(Box::new(err))
+        }
+        None => {
+            let err = Box::new(cli::CliError::MissingInputArg(String::from("--in-records")));
+            cli::exit_with_error(err)
+        }
+    };
+
+    let in_prim = match m.value_of("in_prim") {
+        Some(input) => match cli::parse_input_file(input) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(Box::new(err))
+        }
+        None => {
+            let err = Box::new(cli::CliError::MissingInputArg(String::from("--in-prim")));
+            cli::exit_with_error(err)
+        }
+    };
+
+    let out_features = match m.value_of("out_features") {
+        Some(input) => match cli::parse_output_file(input, quiet) {
+            Ok(file) => file,
+            Err(err) => cli::exit_with_error(Box::new(err))
+        }
+        None => {
+            let err = Box::new(cli::CliError::MissingInputArg(String::from("<out_features>")));
+            cli::exit_with_error(err)
+        }
+    };
+
+    // Parse and validate feature extraction arguments
     let extract_opts = ExtractOpts {
         payload: m.is_present("payload"),
         time: if m.is_present("time") {
@@ -57,15 +91,9 @@ fn parse_opts() -> Opts {
 
     Opts {
         extract_opts,
-        in_records: match m.value_of("in_records") {
-            None => panic!("No input records provided."),
-            Some(path) => File::open(path).expect("Cannot open input records file.")
-        },
-        in_prim_stats: match m.value_of("in_prim_stats") {
-            None => panic!("No input primary domain stats provided."),
-            Some(path) => File::open(path).expect("Cannot open input primary domain stats file.")
-        },
-        out_features: cli::parse_output_file(m.value_of("out_features").unwrap(), quiet).unwrap(),
+        in_records,
+        in_prim,
+        out_features,
         quiet,
     }
 }
@@ -77,7 +105,7 @@ fn consume_input(opts: &Opts) -> (QueryMap, HashMap<u32, PrimaryDomainStats>, u6
     let mut prim_stats: HashMap<u32, PrimaryDomainStats> = HashMap::new();
     let mut n_entries: u64 = 0;
 
-    let mut stats_reader = BufReader::new(&opts.in_prim_stats);
+    let mut stats_reader = BufReader::new(&opts.in_prim);
     while let Ok(stats) = bincode::deserialize_from::<_, PrimaryDomainStats>(&mut stats_reader) {
         n_entries += stats.count as u64;
         prim_stats.insert(stats.id, stats);

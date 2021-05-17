@@ -11,7 +11,7 @@ args:
       required: true
       takes_value: true
 
-  - in_prim_stats:
+  - in_prim:
       help: Input file for processed (binary) primary domain statistics.
       long: in-prim
       multiple: false
@@ -20,7 +20,6 @@ args:
 
   - out_features:
       help: Output file for extracted features.
-      long: out-features
       multiple: false
       required: true
       takes_value: true
