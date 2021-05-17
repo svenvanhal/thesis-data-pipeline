@@ -60,3 +60,4 @@ groups:
   - feature_extraction:
       args: [ payload, time, fixed ]
       multiple: true
+      required: true
