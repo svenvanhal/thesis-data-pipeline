@@ -17,8 +17,8 @@ pub struct WindowState {
     pub max_label_len: usize,
 
     // Entropy
-    char_map: BTreeMap<u8, u8>,
-    ascii_map: [u8; 128],
+    char_map: BTreeMap<u8, usize>,
+    ascii_map: [usize; 128],
 }
 
 impl Default for WindowState {
@@ -149,7 +149,7 @@ impl WindowState {
 }
 
 impl TimeWindowFeatureVector {
-    pub fn from_window_state(ws: &WindowState, open_space: &f32, window_duration: &f32) -> Self {
+    pub fn from_window_state(id:usize, ws: &WindowState, open_space: &f32, window_duration: &f32) -> Self {
         let n_unique_queries: f32 = ws.unique_queries.len() as f32;
         let n_unique_labels: usize = ws.unique_labels.len();
         let unique_fill_ratio: f32 = (ws.total_unique_label_len + n_unique_labels - 1) as f32 / (open_space * n_unique_queries);
@@ -165,6 +165,7 @@ impl TimeWindowFeatureVector {
 
         // Return new feature vector
         TimeWindowFeatureVector {
+            id,
             n_unique_labels,
             unique_query_rate,
             entropy,
@@ -178,7 +179,7 @@ impl TimeWindowFeatureVector {
 }
 
 impl FixedWindowFeatureVector {
-    pub fn from_window_state(ws: &WindowState, open_space: &f32) -> Self {
+    pub fn from_window_state(id: usize, ws: &WindowState, open_space: &f32) -> Self {
         let n_unique_queries: f32 = ws.unique_queries.len() as f32;
         let n_unique_labels: usize = ws.unique_labels.len();
         let unique_fill_ratio: f32 = (ws.total_unique_label_len + n_unique_labels - 1) as f32 / (open_space * n_unique_queries);
@@ -191,6 +192,7 @@ impl FixedWindowFeatureVector {
 
         // Return new feature vector
         FixedWindowFeatureVector {
+            id,
             n_unique_labels,
             entropy,
             avg_unique_label_length,

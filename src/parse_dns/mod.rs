@@ -47,8 +47,6 @@ const FILTER_TLD: [&[u8]; 15] = [
     b"example",
 ];
 
-
-
 lazy_static! {
     static ref VALID_PRIM_RE: Regex = Regex::new(r"^(_?[a-zA-Z0-9]+[a-zA-Z0-9.-]*[a-zA-Z0-9]?)$").unwrap();
 }

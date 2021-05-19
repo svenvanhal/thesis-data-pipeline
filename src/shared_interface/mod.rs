@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::parse_dns::DnsPayload;
 
+pub type SerializedLogEntry = (u32, LogRecord);
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LogRecord {
-    pub id: u32,
-    pub prim_id: u32,
+    pub id: usize,
     pub ts: f64,
     pub payload: DnsPayload,
 }
@@ -26,6 +27,6 @@ impl fmt::Display for LogRecord {
             Ok(str) => str.to_owned(),
             Err(_) => format!("{:?}", label)
         }).collect::<Vec<String>>();
-        write!(f, "LogRecord<id={}, prim_id={}, ts={}, payload={}>", self.id, self.prim_id, self.ts, pl.join("."))
+        write!(f, "LogRecord<id={}, ts={}, payload={}>", self.id, self.ts, pl.join("."))
     }
 }

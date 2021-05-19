@@ -16,10 +16,11 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use thesis_data_pipeline::cli;
 use thesis_data_pipeline::feature_extraction::{extract_features_per_domain, ExtractOpts};
-use thesis_data_pipeline::parse_dns::DnsPayload;
-use thesis_data_pipeline::shared_interface::{LogRecord, PrimaryDomainStats};
+use thesis_data_pipeline::shared_interface::{LogRecord, PrimaryDomainStats, SerializedLogEntry};
 
-type QueryMap = HashMap<u32, Vec<(f64, DnsPayload)>>;
+// Key for both maps is primary domain ID
+type QueryMap = HashMap<u32, Vec<LogRecord>>;
+type PrimStats = HashMap<u32, PrimaryDomainStats>;
 
 static LOADING: Emoji<'_, '_> = Emoji("⏳ ", "");
 static WORKING: Emoji<'_, '_> = Emoji("🛠️ ", "");
@@ -100,7 +101,7 @@ fn parse_opts() -> Opts {
     Opts { extract_opts, in_records, in_prim, out_features, quiet }
 }
 
-fn consume_input(opts: &Opts) -> (QueryMap, HashMap<u32, PrimaryDomainStats>, u64) {
+fn consume_input(opts: &Opts) -> (QueryMap, PrimStats, u64) {
     cli::print_output(format!("\n{}   {}Loading filtered entries...\n", style("[1/2]").bold().dim(), LOADING), opts.quiet);
 
     // Load primary domain stats
@@ -120,21 +121,23 @@ fn consume_input(opts: &Opts) -> (QueryMap, HashMap<u32, PrimaryDomainStats>, u6
 
     // Load records
     let mut record_reader = BufReader::new(&opts.in_records);
-    while let Ok(result) = bincode::deserialize_from::<_, LogRecord>(&mut record_reader) {
+    while let Ok((prim_id, log_record)) = bincode::deserialize_from::<_, SerializedLogEntry>(&mut record_reader) {
 
         // Get or create bucket for primary domain, using known capacity for efficiency
-        let bucket = queries.entry(result.prim_id).or_insert_with(|| {
-            let prim_capacity = prim_stats[&result.prim_id].count as usize;
+        let bucket = queries.entry(prim_id).or_insert_with(|| {
+            let prim_capacity = prim_stats[&prim_id].count as usize;
             Vec::with_capacity(prim_capacity)
         });
 
         // Insert query in map
-        bucket.push((result.ts, result.payload));
+        bucket.push(log_record);
 
         // Update progress bar
         if Option::is_some(&pb) { pb.as_ref().unwrap().inc(1); }
     }
     if Option::is_some(&pb) { pb.as_ref().unwrap().finish(); }
+
+    // TODO: warn and exit if n_entries is not the same as lines read
 
     (queries, prim_stats, n_entries)
 }
@@ -147,11 +150,9 @@ fn extract_features(file: &File, opts: &Opts, queries: QueryMap, prim_stats: &Ha
     // Create CSV writer (with Arc and Mutex for thread sharing)
     let gz_writer = GzEncoder::new(BufWriter::new(file), Compression::fast());
     let csv_writer = Arc::new(Mutex::new(csv::WriterBuilder::new()
-        .has_headers(false) // TODO: find a solution for feature names
+        .flexible(true) // faster, no checking
         .quote_style(QuoteStyle::Never)
         .from_writer(gz_writer)));
-
-    let extract_opts = &opts.extract_opts;
 
     // Process queries
     let features = queries.into_par_iter()
@@ -159,20 +160,18 @@ fn extract_features(file: &File, opts: &Opts, queries: QueryMap, prim_stats: &Ha
             // Check for empty entry vec, so unwrap when ordering below is safe
             if entries.is_empty() { return Vec::new(); }
 
-            // Sort entries by timestamp (first item (.0) in tuple)
-            entries.sort_by(|a, b| (&a.0).partial_cmp(&b.0).unwrap());
+            // Sort entries by timestamp
+            entries.sort_by(|a, b| a.ts.partial_cmp(&b.ts).unwrap());
 
             // Extract features
             let prim = &prim_stats[&prim_id];
-            let features = extract_features_per_domain(extract_opts, entries, prim.length);
+            let features = extract_features_per_domain(&opts.extract_opts, entries, prim.length);
 
             // Write to output file from thread for 1000 vectors or more (performance improvement, empirically determined)
             let ret_val = if prim.count >= 1000 {
                 let mut w = csv_writer.lock().unwrap();
-                features.iter().for_each(|fv| {
-                    if let Err(e) = w.serialize(fv) {
-                        cli::exit_with_error(Box::new(e));
-                    }
+                features.iter().for_each(|fv| if let Err(e) = w.serialize(fv) {
+                    cli::exit_with_error(Box::new(e));
                 });
                 Vec::new()
             } else { features };
@@ -193,10 +192,8 @@ fn extract_features(file: &File, opts: &Opts, queries: QueryMap, prim_stats: &Ha
 
     // Write remaining feature vectors to file
     let mut w = csv_writer.lock().unwrap();
-    features.iter().for_each(|fv| {
-        if let Err(e) = w.serialize(fv) {
-            cli::exit_with_error(Box::new(e));
-        }
+    features.iter().for_each(|fv| if let Err(e) = w.serialize(fv) {
+        cli::exit_with_error(Box::new(e));
     });
 
     if let Err(e) = w.flush() {
