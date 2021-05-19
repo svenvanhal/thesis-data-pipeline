@@ -17,7 +17,7 @@ pub struct LogRecord {
 pub struct PrimaryDomainStats {
     pub id: u32,
     pub length: u8,
-    pub count: u32,
+    pub count: usize,
 }
 
 impl fmt::Display for LogRecord {

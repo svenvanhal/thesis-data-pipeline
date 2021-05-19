@@ -3,7 +3,7 @@ extern crate clap;
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, ErrorKind};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -101,26 +101,27 @@ fn parse_opts() -> Opts {
     Opts { extract_opts, in_records, in_prim, out_features, quiet }
 }
 
-fn consume_input(opts: &Opts) -> (QueryMap, PrimStats, u64) {
+fn consume_input(opts: &Opts) -> Result<(QueryMap, PrimStats, usize), std::io::Error> {
     cli::print_output(format!("\n{}   {}Loading filtered entries...\n", style("[1/2]").bold().dim(), LOADING), opts.quiet);
 
     // Load primary domain stats
     let mut prim_stats: HashMap<u32, PrimaryDomainStats> = HashMap::new();
-    let mut n_entries: u64 = 0;
+    let mut n_entries: usize = 0;
 
     let mut stats_reader = BufReader::new(&opts.in_prim);
     while let Ok(stats) = bincode::deserialize_from::<_, PrimaryDomainStats>(&mut stats_reader) {
-        n_entries += stats.count as u64;
+        n_entries += stats.count;
         prim_stats.insert(stats.id, stats);
     }
 
-    let pb = cli::make_progress_bar(n_entries, opts.quiet);
+    let pb = cli::make_progress_bar(n_entries as u64, opts.quiet);
 
     // Map for loaded queries. prim_id <--> (prim_len, [DnsEntry..])
     let mut queries: QueryMap = HashMap::with_capacity(prim_stats.len());
 
     // Load records
     let mut record_reader = BufReader::new(&opts.in_records);
+    let mut n_processed: usize = 0;
     while let Ok((prim_id, log_record)) = bincode::deserialize_from::<_, SerializedLogEntry>(&mut record_reader) {
 
         // Get or create bucket for primary domain, using known capacity for efficiency
@@ -134,18 +135,22 @@ fn consume_input(opts: &Opts) -> (QueryMap, PrimStats, u64) {
 
         // Update progress bar
         if Option::is_some(&pb) { pb.as_ref().unwrap().inc(1); }
+        n_processed += 1;
     }
     if Option::is_some(&pb) { pb.as_ref().unwrap().finish(); }
 
-    // TODO: warn and exit if n_entries is not the same as lines read
+    // Check that the amount of processed lines is the same as expected
+    if n_processed != n_entries {
+        return Err(std::io::Error::from(ErrorKind::InvalidData));
+    }
 
-    (queries, prim_stats, n_entries)
+    Ok((queries, prim_stats, n_entries))
 }
 
-fn extract_features(file: &File, opts: &Opts, queries: QueryMap, prim_stats: &HashMap<u32, PrimaryDomainStats>, n_entries: u64) {
+fn extract_features(file: &File, opts: &Opts, queries: QueryMap, prim_stats: &HashMap<u32, PrimaryDomainStats>, n_entries: usize) {
     cli::print_output(format!("\n{}   {}Extracting features...\n", style("[2/2]").bold().dim(), WORKING), opts.quiet);
 
-    let pb = Arc::new(Mutex::new(cli::make_progress_bar(n_entries, opts.quiet)));
+    let pb = Arc::new(Mutex::new(cli::make_progress_bar(n_entries as u64, opts.quiet)));
 
     // Create CSV writer (with Arc and Mutex for thread sharing)
     let gz_writer = GzEncoder::new(BufWriter::new(file), Compression::fast());
@@ -206,7 +211,14 @@ fn main() {
 
     // Load input data
     let start = Instant::now();
-    let (queries, prim_stats, n_entries) = consume_input(&opts);
+    let (queries, prim_stats, n_entries) = match consume_input(&opts) {
+        Ok(result) => result,
+        Err(err) => {
+            // Truncate output file just to be sure (may have partially written some features)
+            let _ = opts.out_features.set_len(0);
+            cli::exit_with_error(Box::new(err))
+        }
+    };
 
     // Extract features
     extract_features(&opts.out_features, &opts, queries, &prim_stats, n_entries);
