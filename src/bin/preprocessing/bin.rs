@@ -128,8 +128,6 @@ fn main() {
                     PrimaryDomainStats { id: current_prim_id, length: prim_len, count: 0 }
                 });
 
-                // TODO: alternative to serialize_into as is creates a new serializer every loop
-
                 // Create and output log record
                 let row_data: SerializedLogEntry = (prim_entry.id, LogRecord { id, ts, payload });
                 if let Err(e) = bincode::serialize_into(&mut record_writer, &row_data) {
