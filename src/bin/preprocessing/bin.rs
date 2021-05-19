@@ -14,7 +14,7 @@ use num_format::{Locale, ToFormattedString};
 use thesis_data_pipeline::cli;
 use thesis_data_pipeline::parse_dns::parse_dns;
 use thesis_data_pipeline::parse_log::parse_log_line;
-use thesis_data_pipeline::shared_interface::{LogRecord, PrimaryDomainStats};
+use thesis_data_pipeline::shared_interface::{LogRecord, PrimaryDomainStats, SerializedLogEntry};
 
 const ASCII_TAB: u8 = b'\t';
 
@@ -68,20 +68,16 @@ fn parse_opts() -> Opts {
         }
     };
 
-    Opts {
-        in_file,
-        out_records,
-        out_prim,
-        quiet,
-    }
+    Opts { in_file, out_records, out_prim, quiet }
 }
 
+/// TODO: filter fast retransmissions
 fn main() {
     let opts = parse_opts();
     let start_time = Instant::now();
 
     // Primary domain <--> (id, length, count)
-    let mut prim_map: HashMap<Vec<u8>, PrimaryDomainStats> = HashMap::new();
+    let mut prim_map: HashMap<String, PrimaryDomainStats> = HashMap::new();
 
     // Count lines in file for progress bar (and seek to start for reprocessing)
     let time_count = Instant::now();
@@ -108,7 +104,7 @@ fn main() {
     let mut prim_stats_writer = BufWriter::new(&opts.out_prim);
 
     // Initialize counters
-    let mut id: u32 = 0;
+    let mut id: usize = 0;
     let mut prim_id_counter: u32 = 0;
 
     // Read input line-by-line
@@ -117,7 +113,7 @@ fn main() {
         // Parse log line
         if let Ok((ts, query)) = parse_log_line(&line, ASCII_TAB) {
 
-            // FILTER: negative/invalid timestamp
+            // FILTER: negative timestamp
             if ts < 0. { continue; }
 
             // Parse DNS payload
@@ -132,10 +128,10 @@ fn main() {
                     PrimaryDomainStats { id: current_prim_id, length: prim_len, count: 0 }
                 });
 
-                // Create output record
-                let row_data = LogRecord { id, prim_id: prim_entry.id, ts, payload };
+                // TODO: alternative to serialize_into as is creates a new serializer every loop
 
-                // Write output record
+                // Create and output log record
+                let row_data: SerializedLogEntry = (prim_entry.id, LogRecord { id, ts, payload });
                 if let Err(e) = bincode::serialize_into(&mut record_writer, &row_data) {
                     cli::exit_with_error(Box::new(e));
                 }
@@ -171,4 +167,3 @@ fn main() {
     eprintln!("           Primary domains: {}\n", prim_id_counter.to_formatted_string(&Locale::en));
     eprintln!("        {}Finished in {:.1?}", SPARKLE, start_time.elapsed());
 }
-

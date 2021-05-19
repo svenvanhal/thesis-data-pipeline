@@ -3,6 +3,7 @@ use serde::Serialize;
 #[prefix_all("pl_")]
 #[derive(Default, Debug, Serialize, PartialEq)]
 pub struct PayloadFeatureVector {
+    pub id: usize,
     pub n_unique: u8,
     pub ratio_unique: f32,
     pub n_digits: u8,
@@ -17,6 +18,7 @@ pub struct PayloadFeatureVector {
 #[prefix_all("win_time_")]
 #[derive(Default, Debug, Serialize, PartialEq)]
 pub struct TimeWindowFeatureVector {
+    pub id: usize,
     pub n_unique_labels: usize,
     pub unique_query_rate: f32,
     pub entropy: f32,
@@ -30,6 +32,7 @@ pub struct TimeWindowFeatureVector {
 #[prefix_all("win_fixed_")]
 #[derive(Default, Debug, Serialize, PartialEq)]
 pub struct FixedWindowFeatureVector {
+    pub id: usize,
     pub n_unique_labels: usize,
     pub entropy: f32,
     pub avg_unique_label_length: f32,
@@ -39,19 +42,9 @@ pub struct FixedWindowFeatureVector {
 }
 
 #[derive(Serialize)]
+#[serde(untagged)]
 pub enum FeatureVector {
     Payload(PayloadFeatureVector),
     Time(TimeWindowFeatureVector),
     Fixed(FixedWindowFeatureVector),
 }
-
-// TODO: find a better solution to output a dynamic number of features
-#[derive(Serialize)]
-pub struct FeatureRow(
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub Option<FeatureVector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub Option<FeatureVector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub Option<FeatureVector>,
-);

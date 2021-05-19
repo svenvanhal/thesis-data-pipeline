@@ -1,9 +1,5 @@
-use std::rc::Rc;
-
-use crate::feature_extraction::feature_vector::FeatureVector;
-use crate::feature_extraction::payload::payload_features;
-use crate::feature_extraction::sliding::{FixedWindow, TimeWindow};
-use crate::parse_dns::DnsPayload;
+use crate::feature_extraction::feature_vector::{FixedWindowFeatureVector, PayloadFeatureVector, TimeWindowFeatureVector, FeatureVector};
+use crate::shared_interface::LogRecord;
 
 mod sliding;
 mod feature_vector;
@@ -19,48 +15,21 @@ pub struct ExtractOpts {
 }
 
 
-pub fn extract_features_per_domain(opts: &ExtractOpts, queries: Vec<(f64, DnsPayload)>, primary_domain_length: u8) -> Vec<Vec<FeatureVector>> {
-    let mut n_fv: usize = if opts.payload { 1 } else { 0 };
+pub fn extract_features_per_domain(opts: &ExtractOpts, queries: Vec<LogRecord>, primary_domain_length: u8) -> Vec<FeatureVector> {
+    // Payload features
+    if opts.payload {
+        return PayloadFeatureVector::extract_for_domain(queries, primary_domain_length);
+    }
 
-    // Create sliding windows
-    let mut time_window = match opts.time {
-        None => None,
-        Some(duration) => {
-            n_fv += 1;
-            Some(TimeWindow::new(duration, primary_domain_length))
-        }
-    };
+    // Fixed window features
+    if let Some(size) = opts.fixed {
+        return FixedWindowFeatureVector::extract_for_domain(size, queries, primary_domain_length);
+    }
 
-    let mut fixed_window = match opts.fixed {
-        None => None,
-        Some(size) => {
-            n_fv += 1;
-            Some(FixedWindow::new(size, primary_domain_length))
-        }
-    };
+    // Time window features
+    if let Some(duration) = opts.time {
+        return TimeWindowFeatureVector::extract_for_domain(duration, queries, primary_domain_length);
+    }
 
-    // Process all entries in window
-    queries.into_iter()
-        .map(|(ts, payload)| {
-            let payload = Rc::new(payload);
-
-            let mut fv: Vec<FeatureVector> = Vec::with_capacity(n_fv);
-
-            if opts.payload {
-                fv.push(payload_features(&payload, primary_domain_length))
-            }
-
-            match &mut time_window {
-                None => {}
-                Some(win) => fv.push(win.process_entry(ts, Rc::clone(&payload)))
-            }
-
-            match &mut fixed_window {
-                None => {}
-                Some(win) => fv.push(win.process_entry(Rc::clone(&payload)))
-            }
-
-            fv
-        })
-        .collect::<Vec<_>>()
+    panic!("No feature type selected for feature extraction.")
 }

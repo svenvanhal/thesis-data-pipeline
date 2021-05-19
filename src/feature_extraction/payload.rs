@@ -3,15 +3,21 @@ use std::f32::consts::LN_2;
 
 use crate::feature_extraction::feature_vector::{FeatureVector, PayloadFeatureVector};
 use crate::parse_dns::DnsPayload;
+use crate::shared_interface::LogRecord;
 
-pub fn payload_features(entry: &DnsPayload, primary_domain_length: u8) -> FeatureVector {
+impl PayloadFeatureVector {
+    pub fn extract_for_domain(queries: Vec<LogRecord>, primary_domain_length: u8) -> Vec<FeatureVector> {
+        queries.into_iter()
+            .map(|record| FeatureVector::Payload(payload_features(record.id, &record.payload, primary_domain_length)))
+            .collect()
+    }
+}
+
+pub fn payload_features(id: usize, entry: &DnsPayload, primary_domain_length: u8) -> PayloadFeatureVector {
     let n_labels = entry.labels.len() as u8;
 
     // Bail if no labels (e.g. only dots in input string)
-    // TODO: this should not be possible, so check might be removed
-    if n_labels == 0 {
-        return FeatureVector::Payload(PayloadFeatureVector::default());
-    }
+    // if n_labels == 0 { return None; }
 
     // Average label length and maximum label length
     let label_lengths: Vec<u8> = entry.labels.iter().map(|label| label.len() as u8).collect();
@@ -31,10 +37,7 @@ pub fn payload_features(entry: &DnsPayload, primary_domain_length: u8) -> Featur
 
     for label in entry.labels.iter() {
         for ch in label.iter() {
-            if *ch == b'.' {
-                continue;
-            }
-
+            if *ch == b'.' { continue; }
             n_total += 1.;
 
             if ch.is_ascii() {
@@ -77,7 +80,8 @@ pub fn payload_features(entry: &DnsPayload, primary_domain_length: u8) -> Featur
     // Fraction of the total available query space that is used
     let fill_ratio = entry.payload_len as f32 / (253 - (primary_domain_length + 1)) as f32;
 
-    FeatureVector::Payload(PayloadFeatureVector {
+    PayloadFeatureVector {
+        id,
         n_unique,
         ratio_unique,
         n_digits,
@@ -87,5 +91,5 @@ pub fn payload_features(entry: &DnsPayload, primary_domain_length: u8) -> Featur
         max_label_length,
         entropy,
         fill_ratio,
-    })
+    }
 }
