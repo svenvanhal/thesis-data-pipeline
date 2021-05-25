@@ -1,9 +1,38 @@
 use std::collections::VecDeque;
 
-use crate::feature_extraction::feature_vector::{FeatureVector, FixedWindowFeatureVector, TimeWindowFeatureVector};
+use serde::Serialize;
+
+use crate::feature_extraction::FeatureVector;
 use crate::feature_extraction::state::WindowState;
 use crate::parse_dns::DnsPayload;
 use crate::shared_interface::LogRecord;
+
+#[prefix_all("win_time_")]
+#[derive(Default, Debug, Serialize, PartialEq)]
+pub struct TimeWindowFeatureVector {
+    pub id: usize,
+    pub n_unique_labels: usize,
+    pub unique_query_rate: f32,
+    pub entropy: f32,
+    pub unique_transfer_rate: f32,
+    pub avg_unique_label_length: f32,
+    pub unique_fill_ratio: f32,
+    pub max_label_length: u8,
+    pub unique_query_ratio: f32,
+}
+
+#[prefix_all("win_fixed_")]
+#[derive(Default, Debug, Serialize, PartialEq)]
+pub struct FixedWindowFeatureVector {
+    pub id: usize,
+    pub n_unique_labels: usize,
+    pub entropy: f32,
+    pub avg_unique_label_length: f32,
+    pub unique_fill_ratio: f32,
+    pub max_label_length: u8,
+    pub unique_query_ratio: f32,
+}
+
 
 impl TimeWindowFeatureVector {
     pub fn extract_for_domain(duration: f32, queries: Vec<LogRecord>, primary_domain_length: u8) -> Vec<FeatureVector> {

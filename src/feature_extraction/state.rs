@@ -3,7 +3,7 @@ use std::f32::consts::LN_2;
 
 use counter::Counter;
 
-use crate::feature_extraction::feature_vector::{FixedWindowFeatureVector, TimeWindowFeatureVector};
+use crate::feature_extraction::sliding::{FixedWindowFeatureVector, TimeWindowFeatureVector};
 use crate::parse_dns::DnsPayload;
 
 pub struct WindowState {
@@ -149,7 +149,7 @@ impl WindowState {
 }
 
 impl TimeWindowFeatureVector {
-    pub fn from_window_state(id:usize, ws: &WindowState, open_space: &f32, window_duration: &f32) -> Self {
+    pub fn from_window_state(id: usize, ws: &WindowState, open_space: &f32, window_duration: &f32) -> Self {
         let n_unique_queries: f32 = ws.unique_queries.len() as f32;
         let n_unique_labels: usize = ws.unique_labels.len();
         let unique_fill_ratio: f32 = (ws.total_unique_label_len + n_unique_labels - 1) as f32 / (open_space * n_unique_queries);
