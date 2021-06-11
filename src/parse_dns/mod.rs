@@ -138,7 +138,7 @@ mod tests {
     fn test_valid_domain() {
         let expected = DnsPayload {
             labels: vec!["label1".as_bytes().into(), "label2".as_bytes().into()],
-            payload_len: 12,
+            payload_len: 13,
         };
 
         let q = b"label1.label2.example.com";

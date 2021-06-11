@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::f32::consts::LN_2;
+use std::f64::consts::LN_2;
 
 use counter::Counter;
 
@@ -135,16 +135,19 @@ impl WindowState {
     }
 
     pub fn get_entropy(&self) -> f32 {
-        self.char_map
+        (self.char_map
             .values()
             .chain(self.ascii_map.iter())
             .fold(0.0, |acc, &c| {
                 match c {
                     0 => acc,
-                    c => acc + (c as f32 * (c as f32 / self.total_label_len as f32).ln())
+                    c => {
+                        let c = c as f64;
+                        acc + (c * (c / self.total_label_len as f64).ln())
+                    }
                 }
             })
-            .abs() / (self.total_label_len as f32 * LN_2)
+            .abs() / (self.total_label_len as f64 * LN_2)) as f32
     }
 }
 
@@ -152,7 +155,7 @@ impl TimeWindowFeatureVector {
     pub fn from_window_state(id: usize, ws: &WindowState, open_space: &f32, window_duration: &f32) -> Self {
         let n_unique_queries: f32 = ws.unique_queries.len() as f32;
         let n_unique_labels: usize = ws.unique_labels.len();
-        let unique_fill_ratio: f32 = (ws.total_unique_label_len + n_unique_labels - 1) as f32 / (open_space * n_unique_queries);
+        let unique_fill_ratio: f32 = ((ws.total_unique_label_len + n_unique_labels) as f32 - n_unique_queries) / (open_space * n_unique_queries);
 
         let entropy: f32 = ws.get_entropy();
 
@@ -182,7 +185,7 @@ impl FixedWindowFeatureVector {
     pub fn from_window_state(id: usize, ws: &WindowState, open_space: &f32) -> Self {
         let n_unique_queries: f32 = ws.unique_queries.len() as f32;
         let n_unique_labels: usize = ws.unique_labels.len();
-        let unique_fill_ratio: f32 = (ws.total_unique_label_len + n_unique_labels - 1) as f32 / (open_space * n_unique_queries);
+        let unique_fill_ratio: f32 = ((ws.total_unique_label_len + n_unique_labels) as f32 - n_unique_queries) / (open_space * n_unique_queries);
 
         let entropy: f32 = ws.get_entropy();
 
