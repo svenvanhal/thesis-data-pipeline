@@ -84,6 +84,8 @@ impl TimeWindow {
             // Pop expired (unwrap safe here because we know we have a value)
             let (_, payload) = self.content.pop_front().unwrap();
             self.window_state.remove(&payload);
+
+            drop(payload);
         }
 
         // Update window state (accumulators) and subsequently add entry to window buffer
@@ -152,6 +154,11 @@ mod tests {
             payload_len: 5,
         };
 
+        let payload_3 = DnsPayload {
+            labels: vec![b"aabbcc".to_vec(), b"0011223344".to_vec()],
+            payload_len: 17,
+        };
+
         let expected_1 = FixedWindowFeatureVector {
             id: 1,
             n_unique_labels: 2,
@@ -174,6 +181,9 @@ mod tests {
 
         assert_eq!(expected_1, window.process_entry(1, payload_1));
         assert_eq!(expected_2, window.process_entry(2, payload_2));
+
+        // Same as payload 1, should produce same result
+        assert_eq!(expected_2, window.process_entry(2, payload_3));
     }
 
 

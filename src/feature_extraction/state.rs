@@ -14,6 +14,7 @@ pub struct WindowState {
     pub unique_labels: Counter<Vec<u8>>,
     pub total_label_len: usize,
     pub total_unique_label_len: usize,
+    pub total_unique_query_len: usize,
     pub max_label_len: usize,
 
     // Entropy
@@ -35,6 +36,7 @@ impl WindowState {
             n_labels: 0,
             total_label_len: 0,
             total_unique_label_len: 0,
+            total_unique_query_len: 0,
             max_label_len: 0,
 
             unique_queries: Counter::new(),
@@ -52,7 +54,10 @@ impl WindowState {
         // Update unique query counter
         if let Some(entry) = self.unique_queries.get_mut(&entry.labels) {
             *entry += 1
-        } else { self.unique_queries.insert(entry.labels.clone(), 1); }
+        } else {
+            self.unique_queries.insert(entry.labels.clone(), 1);
+            self.total_unique_query_len += entry.payload_len as usize;
+        }
 
         // Update accumulators
         self.n_labels += entry.labels.len();
@@ -88,6 +93,17 @@ impl WindowState {
     pub fn remove(&mut self, removed: &DnsPayload) {
         self.n_queries -= 1;
 
+        // Update unique query counter
+        // Below adapted from Counter.subtract (crate)
+        if let Some(entry) = self.unique_queries.get_mut(&removed.labels) {
+            if *entry <= 1 {
+                self.unique_queries.remove(&removed.labels);
+                self.total_unique_query_len -= removed.payload_len as usize;
+            } else {
+                *entry -= 1;
+            }
+        }
+
         // Update accumulators
         self.n_labels -= removed.labels.len();
 
@@ -113,7 +129,7 @@ impl WindowState {
             // Update entropy
             for ch in label.iter() {
                 match ch {
-                    b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'-' | b'_' => self.ascii_map[*ch as usize] += 1,
+                    b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'-' | b'_' => self.ascii_map[*ch as usize] -= 1,
                     _ => { *self.char_map.entry(*ch).or_insert(0) -= 1; }
                 }
             }
@@ -158,6 +174,8 @@ impl TimeWindowFeatureVector {
         let unique_fill_ratio: f32 = ((ws.total_unique_label_len + n_unique_labels) as f32 - n_unique_queries) / (open_space * n_unique_queries);
 
         let entropy: f32 = ws.get_entropy();
+
+        // TODO: change total_unique_label_len to total_unique_query_len?
 
         let unique_query_rate = n_unique_queries / window_duration;
         let unique_transfer_rate = ws.total_unique_label_len as f32 / window_duration;
