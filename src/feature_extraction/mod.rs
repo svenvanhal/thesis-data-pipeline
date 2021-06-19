@@ -1,11 +1,21 @@
-use crate::feature_extraction::feature_vector::{FixedWindowFeatureVector, PayloadFeatureVector, TimeWindowFeatureVector, FeatureVector};
+use serde::Serialize;
+
+use crate::feature_extraction::payload::PayloadFeatureVector;
+use crate::feature_extraction::sliding::{FixedWindowFeatureVector, TimeWindowFeatureVector};
 use crate::shared_interface::LogRecord;
 
-mod sliding;
-mod feature_vector;
 mod payload;
+mod sliding;
 mod state;
 
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum FeatureVector {
+    Payload(PayloadFeatureVector),
+    Time(TimeWindowFeatureVector),
+    Fixed(FixedWindowFeatureVector),
+}
 
 #[derive(Debug)]
 pub struct ExtractOpts {

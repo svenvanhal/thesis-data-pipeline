@@ -1,9 +1,26 @@
 use std::collections::BTreeMap;
-use std::f32::consts::LN_2;
+use std::f64::consts::LN_2;
 
-use crate::feature_extraction::feature_vector::{FeatureVector, PayloadFeatureVector};
+use serde::Serialize;
+
+use crate::feature_extraction::FeatureVector;
 use crate::parse_dns::DnsPayload;
 use crate::shared_interface::LogRecord;
+
+#[prefix_all("pl_")]
+#[derive(Default, Debug, Serialize, PartialEq)]
+pub struct PayloadFeatureVector {
+    pub id: usize,
+    pub n_unique: u8,
+    pub ratio_unique: f32,
+    pub n_digits: u8,
+    pub n_invalid: u8,
+    pub n_labels: u8,
+    pub avg_label_length: f32,
+    pub max_label_length: u8,
+    pub entropy: f32,
+    pub fill_ratio: f32,
+}
 
 impl PayloadFeatureVector {
     pub fn extract_for_domain(queries: Vec<LogRecord>, primary_domain_length: u8) -> Vec<FeatureVector> {
@@ -32,8 +49,8 @@ pub fn payload_features(id: usize, entry: &DnsPayload, primary_domain_length: u8
     let mut char_map: BTreeMap<u8, u8> = BTreeMap::new();
     let mut ascii_map: [u8; 128] = [0; 128];
 
-    // String length as f32 for entropy division
-    let mut n_total: f32 = 0.;
+    // String length as float for entropy division
+    let mut n_total: f64 = 0.;
 
     for label in entry.labels.iter() {
         for ch in label.iter() {
@@ -68,14 +85,14 @@ pub fn payload_features(id: usize, entry: &DnsPayload, primary_domain_length: u8
                 0 => acc,
                 c => {
                     n_unique += 1;
-                    acc + (c as f32 * (c as f32 / n_total).ln())
+                    acc + (c as f64 * (c as f64 / n_total).ln())
                 }
             }
         })
         .abs();
 
-    let entropy: f32 = result / (n_total * LN_2);
-    let ratio_unique: f32 = n_unique as f32 / n_total;
+    let entropy: f32 = (result / (n_total * LN_2)) as f32;
+    let ratio_unique: f32 = n_unique as f32 / n_total as f32;
 
     // Fraction of the total available query space that is used
     let fill_ratio = entry.payload_len as f32 / (253 - (primary_domain_length + 1)) as f32;
@@ -91,5 +108,35 @@ pub fn payload_features(id: usize, entry: &DnsPayload, primary_domain_length: u8
         max_label_length,
         entropy,
         fill_ratio,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::feature_extraction::payload::{payload_features, PayloadFeatureVector};
+    use crate::parse_dns::DnsPayload;
+
+    #[test]
+    fn smoke_test() {
+        let payload = DnsPayload {
+            labels: vec![b"aabbcc".to_vec(), b"0011223344".to_vec()],
+            payload_len: 17,
+        };
+        let prim_len = 10;
+
+        let expected = PayloadFeatureVector {
+            id: 0,
+            n_unique: 8,
+            ratio_unique: 0.5,
+            n_digits: 10,
+            n_invalid: 0,
+            n_labels: 2,
+            avg_label_length: 8.0,
+            max_label_length: 10,
+            entropy: 3.0,
+            fill_ratio: 0.07024793388429752066115702479339,
+        };
+
+        assert_eq!(expected, payload_features(0, &payload, prim_len));
     }
 }

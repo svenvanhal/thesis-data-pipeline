@@ -115,16 +115,16 @@ pub fn parse_dns(dns_query: &[u8]) -> Result<(String, DnsPayload), ParseDnsError
         let mut payload_len: usize = 0;
         for label in labels.iter() {
             if label.is_empty() || label.len() > 63 { return Err(ParseDnsError::InvalidDnsName); }
-            if label.is_empty() || label.len() > 63 { return Err(ParseDnsError::InvalidDnsName); }
             payload_len += label.len();
         }
+        payload_len += labels.len() - 1;
 
         Ok((prim, DnsPayload {
             labels,
             payload_len: payload_len as u8,
         }))
     } else {
-// FILTER: invalid DNS name (could not be parsed)
+        // FILTER: invalid DNS name (could not be parsed)
         Err(ParseDnsError::InvalidDnsName)
     }
 }
@@ -138,7 +138,7 @@ mod tests {
     fn test_valid_domain() {
         let expected = DnsPayload {
             labels: vec!["label1".as_bytes().into(), "label2".as_bytes().into()],
-            payload_len: 12,
+            payload_len: 13,
         };
 
         let q = b"label1.label2.example.com";
@@ -237,7 +237,7 @@ mod tests {
         let (_, pl_ten) = parse_dns(&ten_label).unwrap();
 
         assert_eq!(3, pl_one.payload_len);
-        assert_eq!(6, pl_two.payload_len);
-        assert_eq!(10, pl_ten.payload_len);
+        assert_eq!(7, pl_two.payload_len);
+        assert_eq!(19, pl_ten.payload_len);
     }
 }
